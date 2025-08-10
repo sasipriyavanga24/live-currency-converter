@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Financial Dashboard</title>
+    <!-- Link to the external stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Include Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Live Currency Converter </h1>
+            <p>Your complete toolkit for financial analysis and planning</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="showTab('currency', this)">💱 Currency Converter</button>
+            <button class="tab-btn" onclick="showTab('compound', this)">📈 Compound Interest</button>
+            <button class="tab-btn" onclick="showTab('investment', this)">💼 Investment Tracker</button>
+            <button class="tab-btn" onclick="showTab('budget', this)">💳 Budget Planner</button>
+        </div>
+
+        <!-- Currency Converter Tab -->
+        <div id="currency" class="tab-content active">
+            <div class="tool-grid">
+                <div class="tool-card">
+                    <h3>Currency Converter</h3>
+                    <div class="form-group">
+                        <label>From Currency</label>
+                        <select id="fromCurrency">
+                            <option value="USD">USD - US Dollar</option>
+                            <option value="EUR">EUR - Euro</option>
+                            <option value="GBP">GBP - British Pound</option>
+                            <option value="JPY">JPY - Japanese Yen</option>
+                            <option value="CAD">CAD - Canadian Dollar</option>
+                            <option value="AUD">AUD - Australian Dollar</option>
+                            <option value="CHF">CHF - Swiss Franc</option>
+                            <option value="CNY">CNY - Chinese Yuan</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>To Currency</label>
+                        <select id="toCurrency">
+                            <option value="EUR">EUR - Euro</option>
+                            <option value="USD">USD - US Dollar</option>
+                            <option value="GBP">GBP - British Pound</option>
+                            <option value="JPY">JPY - Japanese Yen</option>
+                            <option value="CAD">CAD - Canadian Dollar</option>
+                            <option value="AUD">AUD - Australian Dollar</option>
+                            <option value="CHF">CHF - Swiss Franc</option>
+                            <option value="CNY">CNY - Chinese Yuan</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Amount</label>
+                        <input type="number" id="amount" value="100" min="0" step="0.01">
+                    </div>
+                    <button class="btn" onclick="convertCurrency()">Convert Currency</button>
+                    <div id="currencyResult"></div>
+                </div>
+
+                <div class="tool-card">
+                    <h3>Rate Alerts</h3>
+                    <div class="form-group">
+                        <label>Currency Pair</label>
+                        <select id="alertPair">
+                            <option value="USD/EUR">USD/EUR</option>
+                            <option value="EUR/USD">EUR/USD</option>
+                            <option value="GBP/USD">GBP/USD</option>
+                            <option value="USD/JPY">USD/JPY</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Rate</label>
+                        <input type="number" id="targetRate" step="0.0001" placeholder="e.g., 1.2500">
+                    </div>
+                    <div class="form-group">
+                        <label>Alert Type</label>
+                        <select id="alertType">
+                            <option value="above">Above Target</option>
+                            <option value="below">Below Target</option>
+                        </select>
+                    </div>
+                    <button class="btn" onclick="setRateAlert()">Set Alert</button>
+                    <div id="alertsContainer"></div>
+                </div>
+            </div>
+
+            <div class="currency-display">
+                <div>
+                    <div class="currency-rate" id="currentRate">1.0850</div>
+                    <div>USD/EUR</div>
+                </div>
+                <div class="trend-indicator trend-up" id="trendIndicator">
+                    ↗ +0.0025 (0.23%)
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="currencyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Compound Interest Tab -->
+        <div id="compound" class="tab-content">
+            <div class="tool-grid">
+                <div class="tool-card">
+                    <h3>Compound Interest Calculator</h3>
+                    <div class="form-group">
+                        <label>Initial Investment ($)</label>
+                        <input type="number" id="principal" value="10000" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Annual Interest Rate (%)</label>
+                        <input type="number" id="interestRate" value="7" min="0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Time Period (Years)</label>
+                        <input type="number" id="timePeriod" value="10" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Compounding Frequency</label>
+                        <select id="compoundFreq">
+                            <option value="1">Annually</option>
+                            <option value="2">Semi-annually</option>
+                            <option value="4">Quarterly</option>
+                            <option value="12">Monthly</option>
+                            <option value="365">Daily</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Monthly Contribution ($)</label>
+                        <input type="number" id="monthlyContrib" value="500" min="0">
+                    </div>
+                    <button class="btn" onclick="calculateCompound()">Calculate Growth</button>
+                    <div id="compoundResult"></div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="compoundChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Investment Tracker Tab -->
+        <div id="investment" class="tab-content">
+            <div class="tool-grid">
+                <div class="tool-card">
+                    <h3>Add Investment</h3>
+                    <div class="form-group">
+                        <label>Investment Name</label>
+                        <input type="text" id="investmentName" placeholder="e.g., Apple Stock">
+                    </div>
+                    <div class="form-group">
+                        <label>Investment Type</label>
+                        <select id="investmentType">
+                            <option value="Stock">Stock</option>
+                            <option value="Bond">Bond</option>
+                            <option value="ETF">ETF</option>
+                            <option value="Crypto">Cryptocurrency</option>
+                            <option value="Real Estate">Real Estate</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Purchase Price ($)</label>
+                        <input type="number" id="purchasePrice" min="0" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Value ($)</label>
+                        <input type="number" id="currentValue" min="0" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity</label>
+                        <input type="number" id="quantity" value="1" min="0" step="0.01">
+                    </div>
+                    <button class="btn" onclick="addInvestment()">Add Investment</button>
+                </div>
+
+                <div class="tool-card">
+                    <h3>Portfolio Summary</h3>
+                    <div id="portfolioSummary">
+                        <div class="investment-item">
+                            <span class="name">Total Portfolio Value</span>
+                            <span class="value" id="totalValue">$0.00</span>
+                        </div>
+                        <div class="investment-item">
+                            <span class="name">Total Gain/Loss</span>
+                            <span class="value" id="totalGainLoss">$0.00</span>
+                        </div>
+                        <div class="investment-item">
+                            <span class="name">Return Percentage</span>
+                            <span class="value" id="returnPercentage">0.00%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tool-card">
+                <h3>Your Investments</h3>
+                <div id="investmentsList"></div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="portfolioChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Budget Planner Tab -->
+        <div id="budget" class="tab-content">
+            <div class="tool-grid">
+                <div class="tool-card">
+                    <h3>Monthly Budget Setup</h3>
+                    <div class="form-group">
+                        <label>Monthly Income ($)</label>
+                        <input type="number" id="monthlyIncome" value="5000" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Housing ($)</label>
+                        <input type="number" id="housing" value="1500" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Food ($)</label>
+                        <input type="number" id="food" value="600" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Transportation ($)</label>
+                        <input type="number" id="transportation" value="400" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Entertainment ($)</label>
+                        <input type="number" id="entertainment" value="300" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Savings ($)</label>
+                        <input type="number" id="savings" value="800" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Other Expenses ($)</label>
+                        <input type="number" id="other" value="400" min="0">
+                    </div>
+                    <button class="btn" onclick="calculateBudget()">Update Budget</button>
+                </div>
+
+                <div class="tool-card">
+                    <h3>Budget Overview</h3>
+                    <div id="budgetOverview"></div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="budgetChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Message Box for Alerts -->
+    <div id="messageBox"></div>
+
+</body>
+</html>
