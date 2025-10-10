@@ -3,26 +3,847 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Currency Converter</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>CurrencyPro - Live Currency Converter</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+        }
+    </style>
 </head>
-<body>
-    <div class="container">
-        <h1>Currency Converter</h1>
-        <label for="fromCurrency">From Currency:</label>
-        <select id="fromCurrency"></select>
-        
-        <label for="toCurrency">To Currency:</label>
-        <select id="toCurrency"></select>
-        
-        <label for="amount">Amount:</label>
-        <input type="number" id="amount">
-        
-        <button id="convertBtn">Convert</button>
-        
-        <h2>Result:</h2>
-        <p id="result"></p>
-    </div>
-    <script src="script.js"></script>
-</body>
+<body class="bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800 min-h-full">
+    <div id="root" class="min-h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, createContext, useContext } = React;
+
+        // Currency data
+        const CURRENCIES = {
+            USD: { name: 'US Dollar', flag: '🇺🇸', symbol: '$' },
+            EUR: { name: 'Euro', flag: '🇪🇺', symbol: '€' },
+            GBP: { name: 'British Pound', flag: '🇬🇧', symbol: '£' },
+            JPY: { name: 'Japanese Yen', flag: '🇯🇵', symbol: '¥' },
+            CAD: { name: 'Canadian Dollar', flag: '🇨🇦', symbol: 'C$' },
+            AUD: { name: 'Australian Dollar', flag: '🇦🇺', symbol: 'A$' },
+            CHF: { name: 'Swiss Franc', flag: '🇨🇭', symbol: 'CHF' },
+            CNY: { name: 'Chinese Yuan', flag: '🇨🇳', symbol: '¥' },
+            INR: { name: 'Indian Rupee', flag: '🇮🇳', symbol: '₹' },
+            KRW: { name: 'South Korean Won', flag: '🇰🇷', symbol: '₩' },
+            BRL: { name: 'Brazilian Real', flag: '🇧🇷', symbol: 'R$' },
+            MXN: { name: 'Mexican Peso', flag: '🇲🇽', symbol: '$' }
+        };
+
+        // Auth Context
+        const AuthContext = createContext();
+
+        const AuthProvider = ({ children }) => {
+            const [user, setUser] = useState(null);
+            const [users, setUsers] = useState([]);
+
+            useEffect(() => {
+                const savedUsers = localStorage.getItem('currencyapp_users');
+                const savedCurrentUser = localStorage.getItem('currencyapp_current_user');
+                
+                if (savedUsers) {
+                    setUsers(JSON.parse(savedUsers));
+                }
+                if (savedCurrentUser) {
+                    setUser(JSON.parse(savedCurrentUser));
+                }
+            }, []);
+
+            const signUp = (email, password, name) => {
+                const existingUser = users.find(u => u.email === email);
+                if (existingUser) {
+                    throw new Error('User already exists');
+                }
+
+                const newUser = {
+                    id: Date.now(),
+                    email,
+                    password,
+                    name,
+                    createdAt: new Date().toISOString(),
+                    conversions: []
+                };
+
+                const updatedUsers = [...users, newUser];
+                setUsers(updatedUsers);
+                localStorage.setItem('currencyapp_users', JSON.stringify(updatedUsers));
+                
+                setUser(newUser);
+                localStorage.setItem('currencyapp_current_user', JSON.stringify(newUser));
+                
+                return newUser;
+            };
+
+            const signIn = (email, password) => {
+                const foundUser = users.find(u => u.email === email && u.password === password);
+                if (!foundUser) {
+                    throw new Error('Invalid credentials');
+                }
+
+                setUser(foundUser);
+                localStorage.setItem('currencyapp_current_user', JSON.stringify(foundUser));
+                return foundUser;
+            };
+
+            const signOut = () => {
+                setUser(null);
+                localStorage.removeItem('currencyapp_current_user');
+            };
+
+            const addConversion = (conversion) => {
+                if (!user) return;
+
+                const updatedUser = {
+                    ...user,
+                    conversions: [conversion, ...user.conversions].slice(0, 50) // Keep last 50
+                };
+
+                const updatedUsers = users.map(u => u.id === user.id ? updatedUser : u);
+                
+                setUser(updatedUser);
+                setUsers(updatedUsers);
+                localStorage.setItem('currencyapp_users', JSON.stringify(updatedUsers));
+                localStorage.setItem('currencyapp_current_user', JSON.stringify(updatedUser));
+            };
+
+            return (
+                <AuthContext.Provider value={{
+                    user,
+                    signUp,
+                    signIn,
+                    signOut,
+                    addConversion
+                }}>
+                    {children}
+                </AuthContext.Provider>
+            );
+        };
+
+        const useAuth = () => {
+            const context = useContext(AuthContext);
+            if (!context) {
+                throw new Error('useAuth must be used within AuthProvider');
+            }
+            return context;
+        };
+
+        // Currency converter hook
+        const useCurrencyConverter = () => {
+            const [rates, setRates] = useState({});
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [lastUpdated, setLastUpdated] = useState(null);
+
+            const fetchRates = useCallback(async (baseCurrency = 'USD') => {
+                setLoading(true);
+                setError(null);
+                
+                try {
+                    const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${baseCurrency}`);
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch exchange rates');
+                    }
+                    
+                    const data = await response.json();
+                    setRates(data.rates);
+                    setLastUpdated(new Date());
+                } catch (err) {
+                    setError(err.message);
+                    // Fallback mock data
+                    const mockRates = {
+                        USD: 1, EUR: 0.85, GBP: 0.73, JPY: 110, CAD: 1.25,
+                        AUD: 1.35, CHF: 0.92, CNY: 6.45, INR: 74.5, KRW: 1180,
+                        BRL: 5.2, MXN: 20.1
+                    };
+                    setRates(mockRates);
+                    setLastUpdated(new Date());
+                } finally {
+                    setLoading(false);
+                }
+            }, []);
+
+            const convert = useCallback((amount, from, to) => {
+                if (!rates[from] || !rates[to] || !amount) return 0;
+                const usdAmount = amount / rates[from];
+                return (usdAmount * rates[to]).toFixed(2);
+            }, [rates]);
+
+            return { rates, loading, error, lastUpdated, fetchRates, convert };
+        };
+
+        // Navigation component
+        const Navigation = ({ currentPage, setCurrentPage }) => {
+            const { user, signOut } = useAuth();
+
+            return (
+                <nav className="bg-white/10 backdrop-blur-lg border-b border-white/20">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex justify-between items-center h-16">
+                            <div className="flex items-center space-x-4">
+                                <h1 className="text-2xl font-bold text-white">💱 CurrencyPro</h1>
+                                {user && (
+                                    <div className="hidden md:flex space-x-4">
+                                        <button
+                                            onClick={() => setCurrentPage('converter')}
+                                            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                                                currentPage === 'converter' 
+                                                    ? 'bg-white/20 text-white' 
+                                                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                                            }`}
+                                        >
+                                            Converter
+                                        </button>
+                                        <button
+                                            onClick={() => setCurrentPage('history')}
+                                            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                                                currentPage === 'history' 
+                                                    ? 'bg-white/20 text-white' 
+                                                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                                            }`}
+                                        >
+                                            History
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-4">
+                                {user ? (
+                                    <div className="flex items-center space-x-4">
+                                        <span className="text-white/80 text-sm">
+                                            Welcome, {user.name}!
+                                        </span>
+                                        <button
+                                            onClick={signOut}
+                                            className="bg-red-500/20 hover:bg-red-500/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                                        >
+                                            Sign Out
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={() => setCurrentPage('signin')}
+                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                currentPage === 'signin'
+                                                    ? 'bg-white/20 text-white'
+                                                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                                            }`}
+                                        >
+                                            Sign In
+                                        </button>
+                                        <button
+                                            onClick={() => setCurrentPage('signup')}
+                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                currentPage === 'signup'
+                                                    ? 'bg-white text-purple-600'
+                                                    : 'bg-white/20 text-white hover:bg-white/30'
+                                            }`}
+                                        >
+                                            Sign Up
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </nav>
+            );
+        };
+
+        // Sign In component
+        const SignIn = ({ setCurrentPage }) => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const { signIn } = useAuth();
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+
+                try {
+                    await signIn(email, password);
+                    setCurrentPage('converter');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-full flex items-center justify-center p-4">
+                    <div className="w-full max-w-md">
+                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
+                            <div className="text-center mb-8">
+                                <h2 className="text-3xl font-bold text-white mb-2">Welcome Back</h2>
+                                <p className="text-white/80">Sign in to your account</p>
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">
+                                        Email Address
+                                    </label>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        required
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                        placeholder="Enter your email"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">
+                                        Password
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                        placeholder="Enter your password"
+                                    />
+                                </div>
+
+                                {error && (
+                                    <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
+                                        <p className="text-red-200 text-sm">{error}</p>
+                                    </div>
+                                )}
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-200 shadow-lg"
+                                >
+                                    {loading ? 'Signing In...' : 'Sign In'}
+                                </button>
+                            </form>
+
+                            <div className="mt-6 text-center">
+                                <p className="text-white/80 text-sm">
+                                    Don't have an account?{' '}
+                                    <button
+                                        onClick={() => setCurrentPage('signup')}
+                                        className="text-white font-medium hover:underline"
+                                    >
+                                        Sign up here
+                                    </button>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Sign Up component
+        const SignUp = ({ setCurrentPage }) => {
+            const [formData, setFormData] = useState({
+                name: '',
+                email: '',
+                password: '',
+                confirmPassword: ''
+            });
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const { signUp } = useAuth();
+
+            const handleChange = (e) => {
+                setFormData({
+                    ...formData,
+                    [e.target.name]: e.target.value
+                });
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+
+                if (formData.password !== formData.confirmPassword) {
+                    setError('Passwords do not match');
+                    setLoading(false);
+                    return;
+                }
+
+                if (formData.password.length < 6) {
+                    setError('Password must be at least 6 characters');
+                    setLoading(false);
+                    return;
+                }
+
+                try {
+                    await signUp(formData.email, formData.password, formData.name);
+                    setCurrentPage('converter');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-full flex items-center justify-center p-4">
+                    <div className="w-full max-w-md">
+                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
+                            <div className="text-center mb-8">
+                                <h2 className="text-3xl font-bold text-white mb-2">Create Account</h2>
+                                <p className="text-white/80">Join CurrencyPro today</p>
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">
+                                        Full Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        value={formData.name}
+                                        onChange={handleChange}
+                                        required
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                        placeholder="Enter your full name"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">
+                                        Email Address
+                                    </label>
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        required
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                        placeholder="Enter your email"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">
+                                        Password
+                                    </label>
+                                    <input
+                                        type="password"
+                                        name="password"
+                                        value={formData.password}
+                                        onChange={handleChange}
+                                        required
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                        placeholder="Create a password"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-white/90 mb-2">
+                                        Confirm Password
+                                    </label>
+                                    <input
+                                        type="password"
+                                        name="confirmPassword"
+                                        value={formData.confirmPassword}
+                                        onChange={handleChange}
+                                        required
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                        placeholder="Confirm your password"
+                                    />
+                                </div>
+
+                                {error && (
+                                    <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
+                                        <p className="text-red-200 text-sm">{error}</p>
+                                    </div>
+                                )}
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 disabled:opacity-50 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-200 shadow-lg"
+                                >
+                                    {loading ? 'Creating Account...' : 'Create Account'}
+                                </button>
+                            </form>
+
+                            <div className="mt-6 text-center">
+                                <p className="text-white/80 text-sm">
+                                    Already have an account?{' '}
+                                    <button
+                                        onClick={() => setCurrentPage('signin')}
+                                        className="text-white font-medium hover:underline"
+                                    >
+                                        Sign in here
+                                    </button>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Currency Converter component
+        const CurrencyConverter = () => {
+            const [amount, setAmount] = useState('100');
+            const [fromCurrency, setFromCurrency] = useState('USD');
+            const [toCurrency, setToCurrency] = useState('EUR');
+            const { rates, loading, error, lastUpdated, fetchRates, convert } = useCurrencyConverter();
+            const { addConversion } = useAuth();
+
+            useEffect(() => {
+                fetchRates();
+            }, [fetchRates]);
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    fetchRates();
+                }, 30000);
+                return () => clearInterval(interval);
+            }, [fetchRates]);
+
+            const convertedAmount = convert(parseFloat(amount) || 0, fromCurrency, toCurrency);
+            const exchangeRate = rates[fromCurrency] && rates[toCurrency] 
+                ? (rates[toCurrency] / rates[fromCurrency]).toFixed(6)
+                : 0;
+
+            const handleConvert = () => {
+                if (convertedAmount > 0) {
+                    const conversion = {
+                        id: Date.now(),
+                        amount: parseFloat(amount),
+                        fromCurrency,
+                        toCurrency,
+                        convertedAmount: parseFloat(convertedAmount),
+                        exchangeRate: parseFloat(exchangeRate),
+                        timestamp: new Date().toISOString()
+                    };
+                    addConversion(conversion);
+                }
+            };
+
+            useEffect(() => {
+                if (convertedAmount > 0 && amount > 0) {
+                    handleConvert();
+                }
+            }, [convertedAmount, amount, fromCurrency, toCurrency]);
+
+            const swapCurrencies = () => {
+                setFromCurrency(toCurrency);
+                setToCurrency(fromCurrency);
+            };
+
+            return (
+                <div className="min-h-full flex items-center justify-center p-4">
+                    <div className="w-full max-w-lg">
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-bold text-white mb-2">
+                                💱 Currency Converter
+                            </h1>
+                            <p className="text-white/80 text-lg">
+                                Live exchange rates powered by React
+                            </p>
+                            {lastUpdated && (
+                                <p className="text-white/60 text-sm mt-2">
+                                    Last updated: {lastUpdated.toLocaleTimeString()}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-semibold text-white/90 mb-2">
+                                        Amount
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            value={amount}
+                                            onChange={(e) => setAmount(e.target.value)}
+                                            disabled={loading}
+                                            className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                            placeholder="Enter amount"
+                                            min="0"
+                                            step="0.01"
+                                        />
+                                        <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/70 font-medium">
+                                            {CURRENCIES[fromCurrency]?.symbol}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-white/90 mb-2">
+                                        From
+                                    </label>
+                                    <select
+                                        value={fromCurrency}
+                                        onChange={(e) => setFromCurrency(e.target.value)}
+                                        disabled={loading}
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+                                    >
+                                        {Object.entries(CURRENCIES).map(([code, info]) => (
+                                            <option key={code} value={code} className="bg-gray-800 text-white">
+                                                {info.flag} {code} - {info.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="flex justify-center">
+                                    <button
+                                        onClick={swapCurrencies}
+                                        disabled={loading}
+                                        className="bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white p-4 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                                    >
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-white/90 mb-2">
+                                        To
+                                    </label>
+                                    <select
+                                        value={toCurrency}
+                                        onChange={(e) => setToCurrency(e.target.value)}
+                                        disabled={loading}
+                                        className="w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+                                    >
+                                        {Object.entries(CURRENCIES).map(([code, info]) => (
+                                            <option key={code} value={code} className="bg-gray-800 text-white">
+                                                {info.flag} {code} - {info.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="bg-white/10 rounded-xl p-6 text-center border border-white/20">
+                                    {loading ? (
+                                        <div className="flex items-center justify-center space-x-2">
+                                            <div className="animate-spin rounded-full h-6 w-6 border-2 border-white/30 border-t-white"></div>
+                                            <span className="text-white/80">Converting...</span>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <div className="text-white/80 text-sm mb-2">
+                                                {amount || 0} {CURRENCIES[fromCurrency]?.flag} {fromCurrency} =
+                                            </div>
+                                            <div className="text-3xl font-bold text-white mb-2">
+                                                {CURRENCIES[toCurrency]?.symbol}{convertedAmount}
+                                            </div>
+                                            <div className="text-white/80 text-sm">
+                                                {CURRENCIES[toCurrency]?.flag} {toCurrency}
+                                            </div>
+                                            {exchangeRate > 0 && (
+                                                <div className="text-white/60 text-xs mt-3 pt-3 border-t border-white/20">
+                                                    1 {fromCurrency} = {exchangeRate} {toCurrency}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button
+                                    onClick={() => fetchRates()}
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 disabled:from-gray-500 disabled:to-gray-600 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-200 shadow-lg"
+                                >
+                                    {loading ? 'Updating...' : '🔄 Refresh Rates'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // History component
+        const ConversionHistory = () => {
+            const { user } = useAuth();
+
+            if (!user || !user.conversions || user.conversions.length === 0) {
+                return (
+                    <div className="min-h-full flex items-center justify-center p-4">
+                        <div className="text-center">
+                            <div className="text-6xl mb-4">📊</div>
+                            <h2 className="text-2xl font-bold text-white mb-2">No Conversion History</h2>
+                            <p className="text-white/80">Start converting currencies to see your history here!</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-full p-4">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-bold text-white mb-2">📊 Conversion History</h1>
+                            <p className="text-white/80">Your recent currency conversions</p>
+                        </div>
+
+                        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/20">
+                            <div className="space-y-4">
+                                {user.conversions.map((conversion) => (
+                                    <div
+                                        key={conversion.id}
+                                        className="bg-white/10 rounded-lg p-4 border border-white/20 hover:bg-white/20 transition-colors"
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center space-x-4">
+                                                <div className="text-2xl">
+                                                    {CURRENCIES[conversion.fromCurrency]?.flag}
+                                                    →
+                                                    {CURRENCIES[conversion.toCurrency]?.flag}
+                                                </div>
+                                                <div>
+                                                    <div className="text-white font-semibold">
+                                                        {CURRENCIES[conversion.fromCurrency]?.symbol}{conversion.amount} {conversion.fromCurrency}
+                                                        {' → '}
+                                                        {CURRENCIES[conversion.toCurrency]?.symbol}{conversion.convertedAmount} {conversion.toCurrency}
+                                                    </div>
+                                                    <div className="text-white/60 text-sm">
+                                                        Rate: 1 {conversion.fromCurrency} = {conversion.exchangeRate} {conversion.toCurrency}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-white/80 text-sm">
+                                                    {new Date(conversion.timestamp).toLocaleDateString()}
+                                                </div>
+                                                <div className="text-white/60 text-xs">
+                                                    {new Date(conversion.timestamp).toLocaleTimeString()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Landing page for non-authenticated users
+        const LandingPage = ({ setCurrentPage }) => {
+            return (
+                <div className="min-h-full flex items-center justify-center p-4">
+                    <div className="text-center max-w-4xl mx-auto">
+                        <div className="mb-8">
+                            <h1 className="text-6xl font-bold text-white mb-4">
+                                💱 CurrencyPro
+                            </h1>
+                            <p className="text-2xl text-white/90 mb-6">
+                                Professional Currency Converter with Live Rates
+                            </p>
+                            <p className="text-lg text-white/80 mb-8">
+                                Convert currencies in real-time, track your conversion history, and stay updated with the latest exchange rates.
+                            </p>
+                        </div>
+
+                        <div className="grid md:grid-cols-3 gap-6 mb-12">
+                            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                                <div className="text-4xl mb-4">⚡</div>
+                                <h3 className="text-xl font-semibold text-white mb-2">Real-Time Rates</h3>
+                                <p className="text-white/80">Get live exchange rates updated every 30 seconds</p>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                                <div className="text-4xl mb-4">📊</div>
+                                <h3 className="text-xl font-semibold text-white mb-2">Conversion History</h3>
+                                <p className="text-white/80">Track all your conversions with detailed history</p>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                                <div className="text-4xl mb-4">🌍</div>
+                                <h3 className="text-xl font-semibold text-white mb-2">Global Currencies</h3>
+                                <p className="text-white/80">Support for major world currencies</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <button
+                                onClick={() => setCurrentPage('signup')}
+                                className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 mr-4"
+                            >
+                                Get Started Free
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage('signin')}
+                                className="bg-white/20 hover:bg-white/30 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all duration-200 shadow-lg"
+                            >
+                                Sign In
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Main App component
+        const App = () => {
+            const [currentPage, setCurrentPage] = useState('landing');
+            const { user } = useAuth();
+
+            useEffect(() => {
+                if (user) {
+                    setCurrentPage('converter');
+                } else {
+                    setCurrentPage('landing');
+                }
+            }, [user]);
+
+            const renderPage = () => {
+                switch (currentPage) {
+                    case 'signin':
+                        return <SignIn setCurrentPage={setCurrentPage} />;
+                    case 'signup':
+                        return <SignUp setCurrentPage={setCurrentPage} />;
+                    case 'converter':
+                        return user ? <CurrencyConverter /> : <LandingPage setCurrentPage={setCurrentPage} />;
+                    case 'history':
+                        return user ? <ConversionHistory /> : <LandingPage setCurrentPage={setCurrentPage} />;
+                    default:
+                        return <LandingPage setCurrentPage={setCurrentPage} />;
+                }
+            };
+
+            return (
+                <div className="min-h-full">
+                    <Navigation currentPage={currentPage} setCurrentPage={setCurrentPage} />
+                    {renderPage()}
+                </div>
+            );
+        };
+
+        // Render the app
+        ReactDOM.render(
+            <AuthProvider>
+                <App />
+            </AuthProvider>,
+            document.getElementById('root')
+        );
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'98c6bdab277c178a',t:'MTc2MDEwNTg0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
